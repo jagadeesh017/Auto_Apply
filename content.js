@@ -1,9 +1,14 @@
-'use strict';
 // ===================================================================
 // Job Auto Fill — content.js  (Production Grade)
 // Handles: standard HTML, React/Vue/Angular, Shadow DOM,
 //          dynamic/AJAX forms, complex label structures.
 // ===================================================================
+
+// Guard: prevent errors if the script is somehow injected more than once.
+if (window.__jobAutoFillLoaded) {
+  // Already running — nothing to do.
+} else {
+window.__jobAutoFillLoaded = true;
 
 // ── Profile ─────────────────────────────────────────────────────────
 const PROFILE = {
@@ -356,3 +361,5 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   console.log("[Job Auto Fill] ✔ Result:", result);
   sendResponse(result);
 });
+
+} // end guard: window.__jobAutoFillLoaded

@@ -23,20 +23,6 @@ fillBtn.addEventListener("click", async () => {
       return;
     }
 
-    // Inject content script on-demand in case it wasn't loaded
-    // (e.g., extension was installed after the page opened)
-    try {
-      await chrome.scripting.executeScript({
-        target: { tabId: tab.id },
-        files:  ["content.js"],
-      });
-    } catch (_) {
-      // Already injected — safe to ignore this error
-    }
-
-    // Small delay to let the injected script initialise
-    await delay(120);
-
     const response = await chrome.tabs.sendMessage(tab.id, { action: "FILL_FORM" });
 
     if (response?.status === "done") {
@@ -88,6 +74,3 @@ function hideStats() {
   fileWarn.style.display  = "none";
 }
 
-function delay(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
