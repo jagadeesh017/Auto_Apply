@@ -2,101 +2,130 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Job Auto Fill</title>
   <style>
-    /* ── Reset & base ────────────────────────── */
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     body {
-      width: 240px;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 14px;
-      background: #f9f9f9;
-      color: #333;
+      width: 260px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      font-size: 13px;
+      background: #f0f4ff;
+      color: #1e293b;
     }
 
-    /* ── Header ──────────────────────────────── */
+    /* ── Header ── */
     header {
-      background: #2563eb;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
       color: #fff;
-      padding: 12px 16px;
+      padding: 14px 16px 12px;
     }
-    header h1 {
-      font-size: 15px;
-      font-weight: 600;
-      letter-spacing: 0.3px;
-    }
-    header p {
-      font-size: 11px;
-      opacity: 0.85;
-      margin-top: 2px;
-    }
+    header h1 { font-size: 15px; font-weight: 700; letter-spacing: 0.2px; }
+    header p  { font-size: 11px; opacity: 0.8; margin-top: 3px; }
 
-    /* ── Body ────────────────────────────────── */
-    main {
-      padding: 16px;
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-    }
+    /* ── Main ── */
+    main { padding: 14px 16px; display: flex; flex-direction: column; gap: 12px; }
 
-    /* ── Button ──────────────────────────────── */
+    /* ── Button ── */
     #fillBtn {
       width: 100%;
-      padding: 10px;
+      padding: 11px;
       background: #2563eb;
       color: #fff;
       border: none;
-      border-radius: 6px;
+      border-radius: 8px;
       font-size: 14px;
-      font-weight: 600;
+      font-weight: 700;
       cursor: pointer;
-      transition: background 0.15s;
+      transition: background 0.15s, transform 0.1s;
+      letter-spacing: 0.3px;
     }
-    #fillBtn:hover  { background: #1d4ed8; }
-    #fillBtn:active { background: #1e40af; }
-    #fillBtn:disabled { background: #93c5fd; cursor: not-allowed; }
+    #fillBtn:hover   { background: #1d4ed8; }
+    #fillBtn:active  { transform: scale(0.98); }
+    #fillBtn:disabled { background: #93c5fd; cursor: not-allowed; transform: none; }
 
-    /* ── Status message ──────────────────────── */
-    #status {
+    /* ── Status ── */
+    #statusBox {
+      display: none;
+      border-radius: 7px;
+      padding: 9px 11px;
       font-size: 12px;
-      min-height: 16px;
-      text-align: center;
-      color: #16a34a;  /* green by default */
+      line-height: 1.5;
     }
-    #status.error { color: #dc2626; }
+    #statusBox.success { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+    #statusBox.error   { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+    #statusBox.info    { background: #dbeafe; border: 1px solid #93c5fd; color: #1e40af; }
 
-    /* ── Profile preview ─────────────────────── */
+    /* ── Stats grid ── */
+    .stats {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+    .stat {
+      background: #fff;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
+      padding: 8px 10px;
+      text-align: center;
+    }
+    .stat .num  { font-size: 22px; font-weight: 800; color: #2563eb; line-height: 1; }
+    .stat .lbl  { font-size: 10px; color: #64748b; margin-top: 3px; text-transform: uppercase; letter-spacing: 0.5px; }
+
+    /* ── Profile card ── */
     .profile {
       background: #fff;
-      border: 1px solid #e5e7eb;
-      border-radius: 6px;
+      border: 1px solid #e2e8f0;
+      border-radius: 7px;
       padding: 10px 12px;
     }
-    .profile p {
-      font-size: 11px;
-      line-height: 1.7;
-      color: #555;
+    .profile .title {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      color: #94a3b8;
+      margin-bottom: 6px;
     }
-    .profile strong {
-      color: #111;
-      font-weight: 600;
+    .profile p {
+      font-size: 11.5px;
+      line-height: 1.8;
+      color: #475569;
+    }
+    .profile strong { color: #0f172a; font-weight: 600; }
+
+    /* ── File warning ── */
+    #fileWarn {
+      display: none;
+      font-size: 11px;
+      color: #92400e;
+      background: #fef3c7;
+      border: 1px solid #fcd34d;
+      border-radius: 6px;
+      padding: 7px 10px;
     }
   </style>
 </head>
 <body>
   <header>
     <h1>Job Auto Fill</h1>
-    <p>Autofill job application forms</p>
+    <p>Autofill job application forms instantly</p>
   </header>
 
   <main>
     <button id="fillBtn">Auto Fill</button>
-    <p id="status"></p>
 
-    <!-- Quick profile preview so the user knows what will be filled -->
+    <div id="statusBox"></div>
+
+    <div class="stats" id="statsRow" style="display:none;">
+      <div class="stat"><div class="num" id="statInputs">0</div><div class="lbl">Inputs filled</div></div>
+      <div class="stat"><div class="num" id="statSelects">0</div><div class="lbl">Dropdowns</div></div>
+    </div>
+
+    <div id="fileWarn"></div>
+
     <div class="profile">
+      <div class="title">Active Profile</div>
       <p><strong>Name:</strong> Jagadeesh Uttaravilli</p>
       <p><strong>Email:</strong> test@email.com</p>
       <p><strong>Phone:</strong> 9999999999</p>

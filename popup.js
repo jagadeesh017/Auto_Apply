@@ -1,47 +1,93 @@
-// -----------------------------------------------
+'use strict';
+// ===================================================================
 // popup.js — Job Auto Fill
-// Handles the "Auto Fill" button click.
-// Sends a message to the active tab's content.js.
-// -----------------------------------------------
+// ===================================================================
 
-const fillBtn = document.getElementById("fillBtn");
-const status  = document.getElementById("status");
+const fillBtn    = document.getElementById("fillBtn");
+const statusBox  = document.getElementById("statusBox");
+const statsRow   = document.getElementById("statsRow");
+const statInputs = document.getElementById("statInputs");
+const statSelects= document.getElementById("statSelects");
+const fileWarn   = document.getElementById("fileWarn");
 
 fillBtn.addEventListener("click", async () => {
-  // Prevent double-clicks while waiting
   fillBtn.disabled = true;
-  setStatus("", false);
+  showStatus("Filling form…", "info");
+  hideStats();
 
   try {
-    // Get the currently active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
 
     if (!tab?.id) {
-      setStatus("No active tab found.", true);
+      showStatus("Could not detect the active tab.", "error");
       return;
     }
 
-    // Send the FILL_FORM message to content.js running in that tab
+    // Inject content script on-demand in case it wasn't loaded
+    // (e.g., extension was installed after the page opened)
+    try {
+      await chrome.scripting.executeScript({
+        target: { tabId: tab.id },
+        files:  ["content.js"],
+      });
+    } catch (_) {
+      // Already injected — safe to ignore this error
+    }
+
+    // Small delay to let the injected script initialise
+    await delay(120);
+
     const response = await chrome.tabs.sendMessage(tab.id, { action: "FILL_FORM" });
 
     if (response?.status === "done") {
-      setStatus("Form filled successfully!");
+      const { inputsFilled = 0, selectsFilled = 0, fileCount = 0 } = response;
+      const total = inputsFilled + selectsFilled;
+
+      if (total === 0) {
+        showStatus("No matching fields found on this page.", "info");
+      } else {
+        showStatus(`Successfully filled ${total} field${total > 1 ? "s" : ""}!`, "success");
+        showStats(inputsFilled, selectsFilled);
+      }
+
+      if (fileCount > 0) {
+        fileWarn.style.display = "block";
+        fileWarn.textContent =
+          `⚠ ${fileCount} file input${fileCount > 1 ? "s" : ""} found — please attach your resume manually.`;
+      }
     } else {
-      setStatus("Fill attempted (no response).");
+      showStatus("Fill attempted — check the browser console for details.", "info");
     }
+
   } catch (err) {
-    // Common cause: content script not yet injected on chrome:// pages
-    console.error("[Job Auto Fill] Error:", err);
-    setStatus("Could not fill — try reloading the page.", true);
+    console.error("[Job Auto Fill]", err);
+    showStatus(
+      "Failed to fill. Try reloading the page, then click Auto Fill again.",
+      "error"
+    );
   } finally {
     fillBtn.disabled = false;
   }
 });
 
-// -----------------------------------------------
-// setStatus — update the status text and style
-// -----------------------------------------------
-function setStatus(message, isError = false) {
-  status.textContent = message;
-  status.className = isError ? "error" : "";
+// ── Helpers ──────────────────────────────────────────────────────────
+function showStatus(msg, type) {
+  statusBox.textContent  = msg;
+  statusBox.className    = type;       // "success" | "error" | "info"
+  statusBox.style.display = "block";
+}
+
+function showStats(inputs, selects) {
+  statInputs.textContent  = inputs;
+  statSelects.textContent = selects;
+  statsRow.style.display  = "grid";
+}
+
+function hideStats() {
+  statsRow.style.display  = "none";
+  fileWarn.style.display  = "none";
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
