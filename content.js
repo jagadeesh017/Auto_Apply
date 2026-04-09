@@ -1,10 +1,7 @@
 // -----------------------------------------------
 // content.js — Job Auto Fill
-// Injected into every page. Listens for FILL_FORM
-// message from popup.js and autofills form fields.
 // -----------------------------------------------
 
-// Predefined user profile
 const PROFILE = {
   name: "Jagadeesh Uttaravilli",
   email: "test@email.com",
@@ -14,132 +11,172 @@ const PROFILE = {
 };
 
 // -----------------------------------------------
-// getFieldHint — combine name + placeholder + label
-// text for a given element into one lowercase string
-// used for keyword matching.
+// getFieldHint — scrape every possible label source
+// into one lowercase string for keyword matching.
 // -----------------------------------------------
 function getFieldHint(el) {
   const parts = [];
 
-  // Attribute: name
-  if (el.name) parts.push(el.name);
+  if (el.name)                          parts.push(el.name);
+  if (el.placeholder)                   parts.push(el.placeholder);
+  if (el.id)                            parts.push(el.id);
+  if (el.getAttribute("aria-label"))    parts.push(el.getAttribute("aria-label"));
+  if (el.getAttribute("title"))         parts.push(el.getAttribute("title"));
+  if (el.getAttribute("data-label"))    parts.push(el.getAttribute("data-label"));
 
-  // Attribute: placeholder
-  if (el.placeholder) parts.push(el.placeholder);
-
-  // Attribute: id → look for a <label for="id">
+  // <label for="id">
   if (el.id) {
     const label = document.querySelector(`label[for="${el.id}"]`);
-    if (label) parts.push(label.textContent);
+    if (label) parts.push(label.innerText || label.textContent);
   }
 
-  // Aria label
-  if (el.getAttribute("aria-label")) parts.push(el.getAttribute("aria-label"));
+  // Closest wrapping <label>
+  const wrappingLabel = el.closest("label");
+  if (wrappingLabel) parts.push(wrappingLabel.innerText || wrappingLabel.textContent);
 
-  return parts.join(" ").toLowerCase();
+  // Sibling / nearby text: previous element text (common pattern)
+  const prev = el.previousElementSibling;
+  if (prev) parts.push(prev.innerText || prev.textContent || "");
+
+  // type attribute helps too (type="email", type="tel")
+  if (el.type) parts.push(el.type);
+
+  return parts.join(" ").toLowerCase().trim();
 }
 
 // -----------------------------------------------
-// matchProfile — decide which profile value fits
-// the field based on keywords in the hint string.
-// Returns the value string or null if no match.
+// matchProfile — keyword rules, ordered most-specific first.
 // -----------------------------------------------
 function matchProfile(hint) {
-  if (/full.?name|your name|\bname\b/.test(hint)) return PROFILE.name;
-  if (/e.?mail/.test(hint))                        return PROFILE.email;
-  if (/phone|mobile|contact/.test(hint))           return PROFILE.phone;
-  if (/skill/.test(hint))                          return PROFILE.skills;
-  if (/experience/.test(hint))                     return PROFILE.experience;
+  if (/e[-_]?mail/.test(hint) || hint.includes("email") || el_type_is(hint, "email"))
+                                                  return PROFILE.email;
+  if (/phone|mobile|cell|contact|tel/.test(hint) || el_type_is(hint, "tel"))
+                                                  return PROFILE.phone;
+  if (/full[\s_-]?name|your[\s_-]?name|first[\s_-]?.*last|applicant[\s_-]?name/.test(hint))
+                                                  return PROFILE.name;
+  if (/\bname\b/.test(hint))                      return PROFILE.name;
+  if (/skill/.test(hint))                         return PROFILE.skills;
+  if (/experience|exp\b|years/.test(hint))        return PROFILE.experience;
   return null;
 }
 
+// helper: check if the hint string contains "type:<value>"
+function el_type_is(hint, type) {
+  return hint.includes(type);
+}
+
 // -----------------------------------------------
-// fillInputs — iterate all text-like inputs and
-// textareas, skip already-filled ones.
+// setNativeValue — works for React / framework inputs
+// by using the native setter so React's synthetic
+// event system picks up the change.
+// -----------------------------------------------
+function setNativeValue(el, value) {
+  const nativeSetter =
+    Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, "value") ||
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, "value");
+
+  if (nativeSetter && nativeSetter.set) {
+    nativeSetter.set.call(el, value);
+  } else {
+    el.value = value;
+  }
+}
+
+// -----------------------------------------------
+// fireEvents — dispatch all events frameworks listen to
+// -----------------------------------------------
+function fireEvents(el) {
+  ["focus", "keydown", "keypress", "keyup", "input", "change", "blur"].forEach(type => {
+    el.dispatchEvent(new Event(type, { bubbles: true }));
+  });
+}
+
+// -----------------------------------------------
+// fillInputs
 // -----------------------------------------------
 function fillInputs() {
   const inputs = document.querySelectorAll(
-    'input:not([type="file"]):not([type="submit"]):not([type="button"]):not([type="checkbox"]):not([type="radio"]):not([type="hidden"]), textarea'
+    'input:not([type="file"]):not([type="submit"]):not([type="button"])' +
+    ':not([type="checkbox"]):not([type="radio"]):not([type="hidden"]):not([type="search"]), textarea'
   );
 
+  console.log(`[Job Auto Fill] Found ${inputs.length} input/textarea fields`);
+
   inputs.forEach(el => {
-    // Skip fields that already have a value
-    if (el.value && el.value.trim() !== "") return;
+    // Skip already-filled fields
+    if (el.value && el.value.trim() !== "") {
+      console.log(`[Job Auto Fill] Skipping (already filled):`, el);
+      return;
+    }
 
     const hint = getFieldHint(el);
+    console.log(`[Job Auto Fill] Field hint: "${hint.substring(0, 80)}"`);
+
     const value = matchProfile(hint);
 
     if (value) {
-      el.value = value;
-
-      // Trigger input + change events so frameworks (if any) detect the fill
-      el.dispatchEvent(new Event("input",  { bubbles: true }));
-      el.dispatchEvent(new Event("change", { bubbles: true }));
-
-      console.log(`[Job Auto Fill] Filled "${hint.substring(0, 40)}" → "${value}"`);
+      setNativeValue(el, value);
+      fireEvents(el);
+      console.log(`[Job Auto Fill] ✅ Filled → "${value}"`);
+    } else {
+      console.log(`[Job Auto Fill] ❌ No match for hint above`);
     }
   });
 }
 
 // -----------------------------------------------
-// fillSelects — handle <select> dropdowns.
-// If the field relates to experience, try to pick
-// "Fresher" (or a value that contains "fresher").
+// fillSelects
 // -----------------------------------------------
 function fillSelects() {
   const selects = document.querySelectorAll("select");
+  console.log(`[Job Auto Fill] Found ${selects.length} select fields`);
 
   selects.forEach(el => {
-    // Skip already-chosen non-default options
     if (el.value && el.selectedIndex > 0) return;
 
     const hint = getFieldHint(el);
-    if (!/experience/.test(hint)) return;
+    console.log(`[Job Auto Fill] Select hint: "${hint.substring(0, 80)}"`);
 
-    // Look through options for one matching "fresher"
+    if (!/experience|exp\b|years|level/.test(hint)) return;
+
     const target = Array.from(el.options).find(
       opt => opt.text.toLowerCase().includes("fresher") ||
-             opt.value.toLowerCase().includes("fresher")
+             opt.value.toLowerCase().includes("fresher") ||
+             opt.text.toLowerCase().includes("0") ||
+             opt.text.toLowerCase().includes("entry")
     );
 
     if (target) {
       el.value = target.value;
       el.dispatchEvent(new Event("change", { bubbles: true }));
-      console.log(`[Job Auto Fill] Select experience → "${target.text}"`);
+      console.log(`[Job Auto Fill] ✅ Select → "${target.text}"`);
     }
   });
 }
 
 // -----------------------------------------------
-// handleFileInputs — detect file inputs and log a
-// message. Browser security prevents scripted upload.
+// handleFileInputs
 // -----------------------------------------------
 function handleFileInputs() {
   const fileInputs = document.querySelectorAll('input[type="file"]');
-
-  fileInputs.forEach(el => {
-    // Cannot programmatically set a file — browser security restriction.
-    // The user must manually attach their resume / document.
+  if (fileInputs.length > 0) {
     console.warn(
-      "[Job Auto Fill] File input detected. " +
-      "Browser security prevents auto-upload. " +
-      "Please attach your resume manually."
+      `[Job Auto Fill] ${fileInputs.length} file input(s) detected. ` +
+      "Browser security prevents auto-upload. Please attach files manually."
     );
-  });
+  }
 }
 
 // -----------------------------------------------
-// Main listener — waits for the popup to send
-// { action: "FILL_FORM" } via chrome.runtime
+// Message listener
 // -----------------------------------------------
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.action === "FILL_FORM") {
-    console.log("[Job Auto Fill] Starting autofill…");
-
+    console.log("[Job Auto Fill] ▶ Starting autofill…");
     fillInputs();
     fillSelects();
     handleFileInputs();
-
+    console.log("[Job Auto Fill] ✔ Done.");
     sendResponse({ status: "done" });
   }
 });
